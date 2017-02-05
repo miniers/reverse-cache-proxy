@@ -1,0 +1,16 @@
+{
+  "name": "reverse-proxy-cache",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {},
+  "dependencies": {
+    "crypto": "^0.0.3",
+    "filed": "^0.1.0",
+    "http": "^0.0.0",
+    "request": "^2.79.0"
+  },
+  "devDependencies": {}
+}
