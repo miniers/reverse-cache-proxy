@@ -9,4 +9,5 @@ RUN cd /node && \
 ADD conf/nginx /etc/nginx
 
 WORKDIR /node
-CMD ["node", "index.js"]
+
+ADD conf/services.d/node /etc/services.d/node
