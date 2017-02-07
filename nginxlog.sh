@@ -1,0 +1,1 @@
+docker exec -i reverse-cache tail -f /var/log/nginx/access.log -f /var/log/nginx/error.log
