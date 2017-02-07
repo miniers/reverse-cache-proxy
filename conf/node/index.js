@@ -90,7 +90,7 @@ function createCache(req, res) {
 			if (clientRes.statusCode === 200) {
 				clientRequest.pipe(fs.createWriteStream(tempTarget));
 				mkdirs(dir, function () {
-					fs.rename(tempTarget,target,function () {
+					fs.rename(tempTarget,[target,'cache'].join('.'),function () {
 						resolve(true)
 					})
 				})
