@@ -71,20 +71,23 @@ function toCacheDir(req) {
 }
 
 function createCache(req, res) {
-	console.log("createCache", req.method, req.headers.host,req.url);
+	console.log("begin create cache", req.method, req.headers.host,req.url);
 
 	var target = toCachePath(req);
 	var dir = toCacheDir(req);
 	var tempTarget = toTmpPath(req) + "." + Math.random().toString(36).substring(7) +".tmp";
 
-	console.log(getHost(req.headers.host,true));
-	console.log("target:",target," dir:",dir)
+	console.log("remote target:",[getHost(req.headers.host,true), req.url].join(''));
+	console.log("local target:",target," dir:",dir)
 	var s = Date.now();
 
 	var clientRequest = request([getHost(req.headers.host,true), req.url].join(''));
 
 	var cacheWrite = new Promise(function (resolve, reject) {
-		clientRequest.on("error", reject);
+		clientRequest.on("error", function (err) {
+			console.log('fail get response:',err);
+			reject(err);
+		});
 		clientRequest.on("response", function (clientRes) {
 
 			if (clientRes.statusCode === 200) {
@@ -97,14 +100,14 @@ function createCache(req, res) {
 			} else {
 				resolve(promiseFromStream(res));
 			}
-			console.log("get response:", req.url);
+			console.log("success get response:", req.url);
 			clientRequest.pipe(res);
 		});
 
 	});
 
 	cacheWrite.then(function () {
-		console.log("Cache CREATED in", Date.now() - s, "ms for", req.method, req.url, target);
+		console.log("Cache CREATED in", Date.now() - s, "ms for", [getHost(req.headers.host,true), req.url].join('')," ; saved in:", target);
 	});
 
 	return cacheWrite;
