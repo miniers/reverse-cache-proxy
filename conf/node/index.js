@@ -61,13 +61,13 @@ function getHost(host,protocol,path) {
 }
 function toCachePath(req) {
 	var fileName=req.url.split('/').pop();
-	return path.join(cacheDir, getHost(req.headers.host,false,true), fileName?req.url:[req.url,'index.html'].join(''));
+	return path.join(cacheDir, getHost(req.headers.host,false,true), fileName?req.url:[req.url,'/index.cache'].join(''));
 }
 
 function toCacheDir(req) {
 	var paths = req.url.split('/');
-	paths.pop();
-	return path.join(cacheDir, getHost(req.headers.host,false,true), paths.join('/'));
+	var fileName=paths.pop();
+	return path.join(cacheDir, getHost(req.headers.host,false,true), fileName?paths.join('/'):req.url);
 }
 
 function createCache(req, res) {
