@@ -19,11 +19,51 @@ var mkdirs = function (dirpath, callback) {
 		}
 	});
 };
+var rmdirSync = (function(){
+	function iterator(url,dirs){
+		var stat = fs.statSync(url);
+		if(stat.isDirectory()){
+			dirs.unshift(url);//收集目录
+			inner(url,dirs);
+		}else if(stat.isFile()){
+			fs.unlinkSync(url);//直接删除文件
+		}
+	}
+	function inner(path,dirs){
+		var arr = fs.readdirSync(path);
+		for(var i = 0, el ; el = arr[i++];){
+			iterator(path+"/"+el,dirs);
+		}
+	}
+	return function(dir,cb){
+		cb = cb || function(){};
+		var dirs = [];
 
+		try{
+			iterator(dir,dirs);
+			for(var i = 0, el ; el = dirs[i++];){
+				fs.rmdirSync(el);//一次性删除所有收集到的目录
+			}
+			cb()
+		}catch(e){//如果文件或目录本来就不存在，fs.statSync会报错，不过我们还是当成没有异常发生
+			e.code === "ENOENT" ? cb() : cb(e);
+		}
+	}
+})();
 mkdirs(cacheDir);
 var httpServer = http.createServer(function (req, res) {
 	req.addListener('end', function () {
-		createCache(req, res);
+		var rootUrl = req.url.split('/')[1];
+		switch (rootUrl){
+			case 'f_del_file':
+				deleteCache(req, res);
+				break;
+			case 'f_del_dir':
+				deleteCache(req, res,true);
+				break;
+			default:
+				createCache(req, res);
+		}
 	}).resume();
 });
 
@@ -61,13 +101,31 @@ function getHost(host,protocol,path) {
 }
 function toCachePath(req) {
 	var fileName=req.url.split('/').pop();
-	return path.join(cacheDir, getHost(req.headers.host,false,true), fileName?req.url:[req.url,'/index.cache'].join(''));
+	return path.join(cacheDir, getHost(req.headers.host,false,true), fileName?req.url:[req.url,'/index'].join(''));
 }
 
 function toCacheDir(req) {
 	var paths = req.url.split('/');
 	var fileName=paths.pop();
 	return path.join(cacheDir, getHost(req.headers.host,false,true), fileName?paths.join('/'):req.url);
+}
+function deleteCache(req,response,isDir) {
+	var target = toCachePath(req).replace(/f_del_\w+?\//,'');
+	var callback=function (err) {
+		if(err){
+			response.writeHead(400, {"Content-Type": "text/plain"});
+		}else{
+			response.writeHead(202, {"Content-Type": "text/plain"});
+		}
+		response.end();
+	};
+	if(isDir){
+		target = target.split('/');
+		target.pop();
+		rmdirSync(target.join('/'),callback)
+	}else{
+		fs.unlink([target,'cache'].join('.'),callback)
+	}
 }
 
 function createCache(req, res) {
@@ -107,7 +165,7 @@ function createCache(req, res) {
 	});
 
 	cacheWrite.then(function () {
-		console.log("Cache CREATED in", Date.now() - s, "ms for", [getHost(req.headers.host,true), req.url].join('')," ; saved in:", target);
+		console.log("Cache CREATED in", Date.now() - s, "ms for", [getHost(req.headers.host,true), req.url].join('')," ; saved in:", target,'\n');
 	});
 
 	return cacheWrite;
