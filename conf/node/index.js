@@ -86,7 +86,6 @@ function promiseFromStream(stream) {
 	});
 }
 function getHost(host,protocol,path) {
-	//https_registry.npmjs.org_443.cache.6-k.cc:443
 	var hosts=host.replace(/\.cache.*\:/, ':').split('_'),result=[];
 	if(hosts.length>1){
 		result[0]=hosts[1];
