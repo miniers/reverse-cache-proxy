@@ -1,4 +1,4 @@
-FROM smebberson/alpine-nginx-nodejs
+FROM miniers/apline-nginx-node
 MAINTAINER miniers
 
 ADD conf/node /node
