@@ -3,7 +3,6 @@ var http = require("http");
 var path = require("path");
 var fs = require("fs");
 var crypto = require("crypto");
-
 var requesting = {};
 
 var cacheDir = process.cwd() + "/cache";
@@ -137,6 +136,7 @@ function deleteCache(req, response, isDir) {
     fs.unlink([target, 'cache'].join('.'), callback)
   }
 }
+
 function createCache(req, res) {
   console.log("begin create cache", req.method, req.headers.host, req.url);
 
@@ -161,11 +161,11 @@ function createCache(req, res) {
   var cacheWrite = new Promise(function (resolve, reject) {
     clientRequest.on("error", function (err) {
       console.log('fail get response:', err);
+	  requesting[remoteTarget]=false;
       reject(err);
     });
     clientRequest.on("response", function (clientRes) {
-
-      if (clientRes.statusCode === 200) {
+      if (clientRes.statusCode === 200 && req.method == "GET") {
         clientRequest.pipe(fs.createWriteStream(tempTarget));
         promiseFromStream(res)
           .then(function () {
@@ -175,12 +175,14 @@ function createCache(req, res) {
                 requesting[remoteTarget].forEach(function (item) {
                   file.pipe(item)
                 })
+				requesting[remoteTarget]=false;
                 resolve(true)
               })
             })
           })
       } else {
         resolve(promiseFromStream(res));
+		requesting[remoteTarget]=false;
       }
       console.log("success get response:", req.url);
       clientRequest.pipe(res);
