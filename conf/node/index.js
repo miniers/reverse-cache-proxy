@@ -1,173 +1,198 @@
 var request = require("request");
 var http = require("http");
 var path = require("path");
-var filed = require("filed");
 var fs = require("fs");
 var crypto = require("crypto");
+
+var requesting = {};
 
 var cacheDir = process.cwd() + "/cache";
 // 创建所有目录
 var mkdirs = function (dirpath, callback) {
-	fs.exists(dirpath, function (exists) {
-		if (exists) {
-			callback&&callback(dirpath);
-		} else {
-			//尝试创建父目录，然后再创建当前目录
-			mkdirs(path.dirname(dirpath), function () {
-				fs.mkdir(dirpath, callback);
-			});
-		}
-	});
+  fs.exists(dirpath, function (exists) {
+    if (exists) {
+      callback && callback(dirpath);
+    } else {
+      //尝试创建父目录，然后再创建当前目录
+      mkdirs(path.dirname(dirpath), function () {
+        fs.mkdir(dirpath, callback);
+      });
+    }
+  });
 };
-var rmdirSync = (function(){
-	function iterator(url,dirs){
-		var stat = fs.statSync(url);
-		if(stat.isDirectory()){
-			dirs.unshift(url);//收集目录
-			inner(url,dirs);
-		}else if(stat.isFile()){
-			fs.unlinkSync(url);//直接删除文件
-		}
-	}
-	function inner(path,dirs){
-		var arr = fs.readdirSync(path);
-		for(var i = 0, el ; el = arr[i++];){
-			iterator(path+"/"+el,dirs);
-		}
-	}
-	return function(dir,cb){
-		cb = cb || function(){};
-		var dirs = [];
+var rmdirSync = (function () {
+  function iterator(url, dirs) {
+    var stat = fs.statSync(url);
+    if (stat.isDirectory()) {
+      dirs.unshift(url); //收集目录
+      inner(url, dirs);
+    } else if (stat.isFile()) {
+      fs.unlinkSync(url); //直接删除文件
+    }
+  }
 
-		try{
-			iterator(dir,dirs);
-			for(var i = 0, el ; el = dirs[i++];){
-				fs.rmdirSync(el);//一次性删除所有收集到的目录
-			}
-			cb()
-		}catch(e){//如果文件或目录本来就不存在，fs.statSync会报错，不过我们还是当成没有异常发生
-			e.code === "ENOENT" ? cb() : cb(e);
-		}
-	}
+  function inner(path, dirs) {
+    var arr = fs.readdirSync(path);
+    for (var i = 0, el; el = arr[i++];) {
+      iterator(path + "/" + el, dirs);
+    }
+  }
+  return function (dir, cb) {
+    cb = cb || function () {};
+    var dirs = [];
+
+    try {
+      iterator(dir, dirs);
+      for (var i = 0, el; el = dirs[i++];) {
+        fs.rmdirSync(el); //一次性删除所有收集到的目录
+      }
+      cb()
+    } catch (e) { //如果文件或目录本来就不存在，fs.statSync会报错，不过我们还是当成没有异常发生
+      e.code === "ENOENT" ? cb() : cb(e);
+    }
+  }
 })();
 mkdirs(cacheDir);
 var httpServer = http.createServer(function (req, res) {
-	req.addListener('end', function () {
-		var rootUrl = req.url.split('/')[1];
-		switch (rootUrl){
-			case 'f_del_file':
-				deleteCache(req, res);
-				break;
-			case 'f_del_dir':
-				deleteCache(req, res,true);
-				break;
-			default:
-				createCache(req, res);
-		}
-	}).resume();
+  console.log('get req:', req.url);
+  req.addListener('end', function () {
+    var rootUrl = req.url.split('/')[1];
+    switch (rootUrl) {
+      case 'f_del_file':
+        deleteCache(req, res);
+        break;
+      case 'f_del_dir':
+        deleteCache(req, res, true);
+        break;
+      default:
+        createCache(req, res);
+    }
+  }).resume();
 });
 
 function toTmpKey(req) {
-	var h = crypto.createHash("sha1");
-	h.update(req.url);
-	return h.digest("hex");
+  var h = crypto.createHash("sha1");
+  h.update(req.url);
+  return h.digest("hex");
 }
 
 function toTmpPath(req) {
-	return path.join(cacheDir, toTmpKey(req));
+  return path.join(cacheDir, toTmpKey(req));
 }
 
 function promiseFromStream(stream) {
-	return new Promise(function (resolve, reject) {
-		stream.on("error", reject);
-		stream.on("end", resolve);
-		stream.on("close", resolve);
-		stream.on("finish", resolve);
-	});
+  return new Promise(function (resolve, reject) {
+    stream.on("error", reject);
+    stream.on("end", resolve);
+    stream.on("close", resolve);
+    stream.on("finish", resolve);
+  });
 }
-function getHost(host,protocol,path) {
-	var hosts=host.replace(/\.cache.*\:/, ':').split('_'),result=[];
-	if(hosts.length>1){
-		result[0]=hosts[1];
-		result[1]=hosts[2].split(':')[0];
-		if(protocol){
-			result[0]=[hosts[0],hosts[1]].join('://')
-		}
-	}else{
-		result=hosts;
-	}
-	return result.join(path?'/':':')
+
+function getHost(host, protocol, path) {
+  var hosts = host.replace(/\.cache.*\:/, ':').split('_'),
+    result = [];
+  if (hosts.length > 1) {
+    result[0] = hosts[1];
+    result[1] = hosts[2].split(':')[0];
+    if (protocol) {
+      result[0] = [hosts[0], hosts[1]].join('://')
+    }
+  } else {
+    result = hosts;
+  }
+  return result.join(path ? '/' : ':')
 }
+
 function toCachePath(req) {
-	var fileName=req.url.split('/').pop();
-	return path.join(cacheDir, getHost(req.headers.host,false,true), fileName?req.url:[req.url,'/index'].join(''));
+  var fileName = req.url.split('/').pop();
+  return path.join(cacheDir, getHost(req.headers.host, false, true), fileName ? req.url : [req.url, '/index'].join(''));
 }
 
 function toCacheDir(req) {
-	var paths = req.url.split('/');
-	var fileName=paths.pop();
-	return path.join(cacheDir, getHost(req.headers.host,false,true), fileName?paths.join('/'):req.url);
-}
-function deleteCache(req,response,isDir) {
-	var target = toCachePath(req).replace(/f_del_\w+?\//,'');
-	var callback=function (err) {
-		if(err){
-			response.writeHead(400, {"Content-Type": "text/plain"});
-		}else{
-			response.writeHead(202, {"Content-Type": "text/plain"});
-		}
-		response.end();
-	};
-	if(isDir){
-		target = target.split('/');
-		target.pop();
-		rmdirSync(target.join('/'),callback)
-	}else{
-		fs.unlink([target,'cache'].join('.'),callback)
-	}
+  var paths = req.url.split('/');
+  var fileName = paths.pop();
+  return path.join(cacheDir, getHost(req.headers.host, false, true), fileName ? paths.join('/') : req.url);
 }
 
+function deleteCache(req, response, isDir) {
+  var target = toCachePath(req).replace(/f_del_\w+?\//, '');
+  var callback = function (err) {
+    if (err) {
+      response.writeHead(400, {
+        "Content-Type": "text/plain"
+      });
+    } else {
+      response.writeHead(202, {
+        "Content-Type": "text/plain"
+      });
+    }
+    response.end();
+  };
+  if (isDir) {
+    target = target.split('/');
+    target.pop();
+    rmdirSync(target.join('/'), callback)
+  } else {
+    fs.unlink([target, 'cache'].join('.'), callback)
+  }
+}
 function createCache(req, res) {
-	console.log("begin create cache", req.method, req.headers.host,req.url);
+  console.log("begin create cache", req.method, req.headers.host, req.url);
 
-	var target = toCachePath(req);
-	var dir = toCacheDir(req);
-	var tempTarget = toTmpPath(req) + "." + Math.random().toString(36).substring(7) +".tmp";
+  var target = toCachePath(req);
+  var dir = toCacheDir(req);
+  var tempTarget = toTmpPath(req) + "." + Math.random().toString(36).substring(7) + ".tmp";
+  var remoteTarget = [getHost(req.headers.host, true), req.url].join('');
+  console.log("remote target:", remoteTarget);
+  console.log("local target:", target, " dir:", dir);
+  var s = Date.now();
+  var clientRequest, cacheing;
+  if (!requesting[remoteTarget]) {
+    clientRequest = request(remoteTarget);
+    requesting[remoteTarget] = [];
+  } else {
+    console.log("in cacheing")
+    requesting[remoteTarget].push(res);
+    return;
+  }
 
-	console.log("remote target:",[getHost(req.headers.host,true), req.url].join(''));
-	console.log("local target:",target," dir:",dir)
-	var s = Date.now();
 
-	var clientRequest = request([getHost(req.headers.host,true), req.url].join(''));
+  var cacheWrite = new Promise(function (resolve, reject) {
+    clientRequest.on("error", function (err) {
+      console.log('fail get response:', err);
+      reject(err);
+    });
+    clientRequest.on("response", function (clientRes) {
 
-	var cacheWrite = new Promise(function (resolve, reject) {
-		clientRequest.on("error", function (err) {
-			console.log('fail get response:',err);
-			reject(err);
-		});
-		clientRequest.on("response", function (clientRes) {
+      if (clientRes.statusCode === 200) {
+        clientRequest.pipe(fs.createWriteStream(tempTarget));
+        promiseFromStream(res)
+          .then(function () {
+            mkdirs(dir, function () {
+              fs.rename(tempTarget, [target, 'cache'].join('.'), function () {
+                var file = fs.createReadStream([target, 'cache'].join('.'));
+                requesting[remoteTarget].forEach(function (item) {
+                  file.pipe(item)
+                })
+                resolve(true)
+              })
+            })
+          })
+      } else {
+        resolve(promiseFromStream(res));
+      }
+      console.log("success get response:", req.url);
+      clientRequest.pipe(res);
+    });
 
-			if (clientRes.statusCode === 200) {
-				clientRequest.pipe(fs.createWriteStream(tempTarget));
-				mkdirs(dir, function () {
-					fs.rename(tempTarget,[target,'cache'].join('.'),function () {
-						resolve(true)
-					})
-				})
-			} else {
-				resolve(promiseFromStream(res));
-			}
-			console.log("success get response:", req.url);
-			clientRequest.pipe(res);
-		});
+  });
 
-	});
+  cacheWrite.then(function () {
+    console.log("Cache CREATED in", Date.now() - s, "ms for", [getHost(req.headers.host, true), req.url].join(''), " ; saved in:", target, '\n');
+  });
 
-	cacheWrite.then(function () {
-		console.log("Cache CREATED in", Date.now() - s, "ms for", [getHost(req.headers.host,true), req.url].join('')," ; saved in:", target,'\n');
-	});
-
-	return cacheWrite;
+  return cacheWrite;
 }
 
 
