@@ -4,7 +4,22 @@ var path = require("path");
 var fs = require("fs");
 var crypto = require("crypto");
 var requesting = {};
-
+var AgentHttp = require('socks5-http-client/lib/Agent');
+var AgentHttps = require('socks5-https-client/lib/Agent');
+var httpProxyConfig = {
+  agentClass: AgentHttp,
+  agentOptions: {
+    socksHost: '10.0.0.13', // Defaults to 'localhost'.
+    socksPort: 1080 // Defaults to 1080.
+  }
+}
+var httpsProxyConfig = {
+  agentClass: AgentHttps,
+  agentOptions: {
+    socksHost: '10.0.0.13', // Defaults to 'localhost'.
+    socksPort: 1080 // Defaults to 1080.
+  }
+}
 var cacheDir = process.cwd() + "/cache";
 // 创建所有目录
 var mkdirs = function (dirpath, callback) {
@@ -102,6 +117,9 @@ function getHost(host, protocol, path) {
   }
   return result.join(path ? '/' : ':')
 }
+function getProtocol(url){
+	return url.split(':')[0];
+}
 
 function toCachePath(req) {
   var fileName = req.url.split('/').pop();
@@ -149,7 +167,10 @@ function createCache(req, res) {
   var s = Date.now();
   var clientRequest, cacheing;
   if (!requesting[remoteTarget]) {
-    clientRequest = request(remoteTarget);
+	  console.log("enable_proxy:",process.env.enable_proxy);
+    clientRequest = request(Object.assign({
+      url: remoteTarget,
+    },process.env.enable_proxy?(getProtocol(remoteTarget) == 'http'?httpProxyConfig:httpsProxyConfig):{}));
     requesting[remoteTarget] = [];
   } else {
     console.log("in cacheing")
@@ -161,7 +182,7 @@ function createCache(req, res) {
   var cacheWrite = new Promise(function (resolve, reject) {
     clientRequest.on("error", function (err) {
       console.log('fail get response:', err);
-	  requesting[remoteTarget]=false;
+      requesting[remoteTarget] = false;
       reject(err);
     });
     clientRequest.on("response", function (clientRes) {
@@ -175,14 +196,14 @@ function createCache(req, res) {
                 requesting[remoteTarget].forEach(function (item) {
                   file.pipe(item)
                 })
-				requesting[remoteTarget]=false;
+                requesting[remoteTarget] = false;
                 resolve(true)
               })
             })
           })
       } else {
         resolve(promiseFromStream(res));
-		requesting[remoteTarget]=false;
+        requesting[remoteTarget] = false;
       }
       console.log("success get response:", req.url);
       clientRequest.pipe(res);
