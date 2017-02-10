@@ -165,24 +165,24 @@ function createCache(req, res) {
   console.log("remote target:", remoteTarget);
   console.log("local target:", target, " dir:", dir);
   var s = Date.now();
-  var clientRequest, enable_proxy = getProxy(req.headers.host);
-  if (!requesting[remoteTarget]) {
+  var clientRequest, enable_proxy = getProxy(req.headers.host),requestingId=[remoteTarget,enable_proxy?'_proxy':''].join('');
+  if (!requesting[requestingId]) {
     console.log("enable_proxy:", enable_proxy);
     clientRequest = request(Object.assign({
       url: remoteTarget,
     }, enable_proxy ? Object.assign({
       agentClass: getProtocol(remoteTarget) == 'http' ? AgentHttp : AgentHttps,
     }, proxyConfig) : {}));
-    requesting[remoteTarget] = [];
+    requesting[requestingId] = [];
   } else {
     console.log("in cacheing")
-    requesting[remoteTarget].push(res);
+    requesting[requestingId].push(res);
     return;
   }
   var cacheWrite = new Promise(function (resolve, reject) {
     clientRequest.on("error", function (err) {
       console.log('fail get response:', err);
-      delete requesting[remoteTarget];
+      delete requesting[requestingId];
       reject(err);
     });
     clientRequest.on("response", function (clientRes) {
@@ -193,17 +193,17 @@ function createCache(req, res) {
             mkdirs(dir, function () {
               fs.rename(tempTarget, [target, 'cache'].join('.'), function () {
                 var file = fs.createReadStream([target, 'cache'].join('.'));
-                requesting[remoteTarget].forEach(function (item) {
+                requesting[requestingId].forEach(function (item) {
                   file.pipe(item)
                 })
-                delete requesting[remoteTarget];
+                delete requesting[requestingId];
                 resolve(true)
               })
             })
           })
       } else {
         resolve(promiseFromStream(res));
-        delete requesting[remoteTarget];
+        delete requesting[requestingId];
 
       }
       console.log("success get response:", req.url);
