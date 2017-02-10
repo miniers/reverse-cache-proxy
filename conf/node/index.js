@@ -6,18 +6,10 @@ var crypto = require("crypto");
 var requesting = {};
 var AgentHttp = require('socks5-http-client/lib/Agent');
 var AgentHttps = require('socks5-https-client/lib/Agent');
-var httpProxyConfig = {
-  agentClass: AgentHttp,
+var proxyConfig = {
   agentOptions: {
-    socksHost: '10.0.0.13', // Defaults to 'localhost'.
-    socksPort: 1080 // Defaults to 1080.
-  }
-}
-var httpsProxyConfig = {
-  agentClass: AgentHttps,
-  agentOptions: {
-    socksHost: '10.0.0.13', // Defaults to 'localhost'.
-    socksPort: 1080 // Defaults to 1080.
+    socksHost: process.env.proxy_host || '10.0.0.13', // Defaults to 'localhost'.
+    socksPort: process.env.proxy_port || 1080 // Defaults to 1080.
   }
 }
 var cacheDir = process.cwd() + "/cache";
@@ -117,8 +109,16 @@ function getHost(host, protocol, path) {
   }
   return result.join(path ? '/' : ':')
 }
-function getProtocol(url){
-	return url.split(':')[0];
+
+//判断是否走代理
+function getProxy(host) {
+  var match = host.match(/cache\.([^\:\.\/]+)/);
+  return match && match.length > 1 ? match[1] == 'proxy' : false;
+}
+
+function getProtocol(url) {
+  console.log("protocol is:", url.split(':')[0]);
+  return url.split(':')[0];
 }
 
 function toCachePath(req) {
@@ -165,24 +165,24 @@ function createCache(req, res) {
   console.log("remote target:", remoteTarget);
   console.log("local target:", target, " dir:", dir);
   var s = Date.now();
-  var clientRequest, cacheing;
+  var clientRequest, enable_proxy = getProxy(req.headers.host);
   if (!requesting[remoteTarget]) {
-	  console.log("enable_proxy:",process.env.enable_proxy);
+    console.log("enable_proxy:", enable_proxy);
     clientRequest = request(Object.assign({
       url: remoteTarget,
-    },process.env.enable_proxy?(getProtocol(remoteTarget) == 'http'?httpProxyConfig:httpsProxyConfig):{}));
+    }, enable_proxy ? Object.assign({
+      agentClass: getProtocol(remoteTarget) == 'http' ? AgentHttp : AgentHttps,
+    }, proxyConfig) : {}));
     requesting[remoteTarget] = [];
   } else {
     console.log("in cacheing")
     requesting[remoteTarget].push(res);
     return;
   }
-
-
   var cacheWrite = new Promise(function (resolve, reject) {
     clientRequest.on("error", function (err) {
       console.log('fail get response:', err);
-      requesting[remoteTarget] = false;
+      delete requesting[remoteTarget];
       reject(err);
     });
     clientRequest.on("response", function (clientRes) {
@@ -196,14 +196,15 @@ function createCache(req, res) {
                 requesting[remoteTarget].forEach(function (item) {
                   file.pipe(item)
                 })
-                requesting[remoteTarget] = false;
+                delete requesting[remoteTarget];
                 resolve(true)
               })
             })
           })
       } else {
         resolve(promiseFromStream(res));
-        requesting[remoteTarget] = false;
+        delete requesting[remoteTarget];
+
       }
       console.log("success get response:", req.url);
       clientRequest.pipe(res);
